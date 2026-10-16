@@ -256,7 +256,7 @@ function setPresence(mode: Presence): void {
     element.src = silenceUrl;
     element.loop = true;
   }
-  if (mode === "silent" || mode === "element") {
+  if (mode === "silent" || mode === "element" || mode === "session") {
     try {
       playerManager?.setMediaElement?.(presenceElement());
     } catch (error) {
@@ -282,7 +282,7 @@ function watchSession(): void {
   const reload = (): void => {
     sessionLoaded = false;
     if (presenceMode === "session" && currentPlayerState.isPlaying) {
-      setTimeout(() => showSession(currentPlayerState.isPlaying), 1000);
+      setTimeout(() => showSession(currentPlayerState.isPlaying), 5000);
     }
   };
   playerManager.addEventListener(events.EventType.MEDIA_FINISHED, reload);
