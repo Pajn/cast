@@ -261,6 +261,7 @@ function setPresence(mode: Presence): void {
       );
     }
   }
+  showPlaying(currentPlayerState.isPlaying);
 }
 
 function showPlaying(playing: boolean): void {
