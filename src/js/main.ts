@@ -215,27 +215,17 @@ function setupGlobalErrorForwarding() {
 
 let player: SendspinPlayer | undefined;
 
-const silenceUrl = new URL("../assets/silence.wav", import.meta.url).href;
 const longSilenceUrl = new URL("../assets/silence-long.mp3", import.meta.url)
   .href;
 
-// How the receiver shows the device it plays, which a sender's config may choose, for speakers
-// that silence or stop an app whose audio comes from Web Audio alone, such as WiiM's:
-// - "none": Web Audio straight to the output, as upstream.
-// - "silent": also a silent clip looped in a media element the player manager holds.
-// - "silent-free": the silent clip, without the player manager.
-// - "element": the music itself through a media element the player manager holds.
+// How the receiver shows the device it plays, which a sender's config may choose:
 // - "session": a silent track loaded into the player manager as a media session, which the
-//   device sees as playing, while the music plays through Web Audio. The default: a WiiM
-//   plays only while it sees a media session play.
-type Presence = "none" | "silent" | "silent-free" | "element" | "session";
-const PRESENCES: readonly Presence[] = [
-  "none",
-  "silent",
-  "silent-free",
-  "element",
-  "session",
-];
+//   device sees as playing, while the music plays through Web Audio. The default: some Cast
+//   speakers, such as WiiM's, silence and then stop an app whose audio comes from Web Audio
+//   alone, and play only while they see a media session play.
+// - "none": Web Audio straight to the output, as upstream.
+type Presence = "none" | "session";
+const PRESENCES: readonly Presence[] = ["none", "session"];
 let presenceMode: Presence = "session";
 let playerManager: any = null;
 
@@ -252,12 +242,8 @@ function presenceElement(): HTMLAudioElement {
 function setPresence(mode: Presence): void {
   presenceMode = mode;
   console.log("Sendspin: Presence", mode);
-  if (mode === "silent" || mode === "silent-free") {
-    const element = presenceElement();
-    element.src = silenceUrl;
-    element.loop = true;
-  }
-  if (mode === "silent" || mode === "element" || mode === "session") {
+  if (mode === "session") {
+    // The player manager needs an element to load the silent track into.
     try {
       playerManager?.setMediaElement?.(presenceElement());
     } catch (error) {
@@ -335,26 +321,12 @@ function showSession(playing: boolean): void {
 }
 
 function showPlaying(playing: boolean): void {
-  if (presenceMode === "session") {
+  if (presenceMode === "session" && playing) {
     // Kept playing once the player has played, through pauses, seeks and the gaps between
     // streams: a WiiM mutes its amplifier as soon as the session stops, and takes the next
     // audio, such as a calibration's first chirp, to wake. The sender stops the receiver once
     // it has been idle for a while.
-    if (playing) {
-      showSession(true);
-    }
-    return;
-  }
-  if (presenceMode !== "silent" && presenceMode !== "silent-free") {
-    return;
-  }
-  const element = presenceElement();
-  if (playing && element.paused) {
-    element.play().catch((error) => {
-      console.warn("Sendspin: Could not play the silent clip", error);
-    });
-  } else if (!playing && !element.paused) {
-    element.pause();
+    showSession(true);
   }
 }
 
@@ -647,9 +619,6 @@ async function connectToServer(baseUrl: string): Promise<boolean> {
       clientName,
       correctionMode: "sync", // Explicit sync mode for multi-device playback
       storage: memoryStorage, // Cast doesn't support localStorage
-      ...(presenceMode === "element"
-        ? { audioElement: presenceElement() }
-        : {}),
       syncDelay: providedSyncDelay,
       bufferCapacity: 1024 * 1024 * 2, // 2MB (GC4A memory constraint)
       // Use codecs from sender config, default to PCM for maximum compatibility.
