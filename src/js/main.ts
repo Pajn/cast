@@ -217,24 +217,57 @@ let player: SendspinPlayer | undefined;
 
 const silenceUrl = new URL("../assets/silence.wav", import.meta.url).href;
 
-// A silent clip looped in a media element while the player plays, which the receiver's player
-// manager holds, so that the device sees media playing. Some Cast speakers, such as WiiM's,
-// silence and then stop an app whose audio comes from Web Audio alone. The music itself still
-// plays through Web Audio, which a media element fed from it does not on those speakers.
+// How the receiver shows the device it plays, which a sender's config may choose, for speakers
+// that silence or stop an app whose audio comes from Web Audio alone, such as WiiM's:
+// - "none": Web Audio straight to the output, as upstream.
+// - "silent": also a silent clip looped in a media element the player manager holds.
+// - "silent-free": the silent clip, without the player manager.
+// - "element": the music itself through a media element the player manager holds.
+type Presence = "none" | "silent" | "silent-free" | "element";
+const PRESENCES: readonly Presence[] = [
+  "none",
+  "silent",
+  "silent-free",
+  "element",
+];
+let presenceMode: Presence = "none";
+let playerManager: any = null;
+
 let mediaElement: HTMLAudioElement | null = null;
-function presence(): HTMLAudioElement {
+function presenceElement(): HTMLAudioElement {
   if (!mediaElement) {
     mediaElement = document.createElement("audio");
     mediaElement.style.display = "none";
-    mediaElement.src = silenceUrl;
-    mediaElement.loop = true;
     document.body.appendChild(mediaElement);
   }
   return mediaElement;
 }
 
+function setPresence(mode: Presence): void {
+  presenceMode = mode;
+  console.log("Sendspin: Presence", mode);
+  if (mode === "silent" || mode === "silent-free") {
+    const element = presenceElement();
+    element.src = silenceUrl;
+    element.loop = true;
+  }
+  if (mode === "silent" || mode === "element") {
+    try {
+      playerManager?.setMediaElement?.(presenceElement());
+    } catch (error) {
+      console.warn(
+        "Sendspin: Could not give the player manager the media element",
+        error,
+      );
+    }
+  }
+}
+
 function showPlaying(playing: boolean): void {
-  const element = presence();
+  if (presenceMode !== "silent" && presenceMode !== "silent-free") {
+    return;
+  }
+  const element = presenceElement();
   if (playing && element.paused) {
     element.play().catch((error) => {
       console.warn("Sendspin: Could not play the silent clip", error);
@@ -533,6 +566,9 @@ async function connectToServer(baseUrl: string): Promise<boolean> {
       clientName,
       correctionMode: "sync", // Explicit sync mode for multi-device playback
       storage: memoryStorage, // Cast doesn't support localStorage
+      ...(presenceMode === "element"
+        ? { audioElement: presenceElement() }
+        : {}),
       syncDelay: providedSyncDelay,
       bufferCapacity: 1024 * 1024 * 2, // 2MB (GC4A memory constraint)
       // Use codecs from sender config, default to PCM for maximum compatibility.
@@ -802,6 +838,12 @@ function handleSenderMessage(rawMessage: unknown) {
   const syncDelay =
     typeof data.syncDelay === "number" ? data.syncDelay : undefined;
   const codecs = data.codecs;
+  if (
+    typeof data.presence === "string" &&
+    (PRESENCES as readonly string[]).includes(data.presence)
+  ) {
+    setPresence(data.presence as Presence);
+  }
 
   if (
     typeof data.receiverLogLevel === "string" &&
@@ -898,15 +940,7 @@ function tryInitCafReceiver(): boolean {
   }
   receiverStarted = true;
 
-  // The receiver's own player plays the media element, so the device counts it as media.
-  try {
-    (context as any).getPlayerManager?.()?.setMediaElement?.(presence());
-  } catch (error) {
-    console.warn(
-      "Sendspin: Could not give the player manager the media element",
-      error,
-    );
-  }
+  playerManager = (context as any).getPlayerManager?.() ?? null;
 
   castContext = {
     getSystemVolume: () => (context as any).getSystemVolume?.() ?? null,
