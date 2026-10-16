@@ -216,7 +216,7 @@ function setupGlobalErrorForwarding() {
 let player: SendspinPlayer | undefined;
 
 const silenceUrl = new URL("../assets/silence.wav", import.meta.url).href;
-const longSilenceUrl = new URL("../assets/silence-long.ogg", import.meta.url)
+const longSilenceUrl = new URL("../assets/silence-long.mp3", import.meta.url)
   .href;
 
 // How the receiver shows the device it plays, which a sender's config may choose, for speakers
@@ -270,6 +270,24 @@ function setPresence(mode: Presence): void {
 }
 
 let sessionLoaded = false;
+let sessionWatched = false;
+
+// Loads the silent track again when it ends or fails, while the player plays.
+function watchSession(): void {
+  const events = window.cast?.framework?.events as any;
+  if (sessionWatched || !playerManager || !events) {
+    return;
+  }
+  sessionWatched = true;
+  const reload = (): void => {
+    sessionLoaded = false;
+    if (presenceMode === "session" && currentPlayerState.isPlaying) {
+      setTimeout(() => showSession(currentPlayerState.isPlaying), 1000);
+    }
+  };
+  playerManager.addEventListener(events.EventType.MEDIA_FINISHED, reload);
+  playerManager.addEventListener(events.EventType.ERROR, reload);
+}
 
 // The media session the device sees: the long silent track, loaded once, then played and paused
 // with the player.
@@ -278,13 +296,14 @@ function showSession(playing: boolean): void {
   if (!playerManager || !messages) {
     return;
   }
+  watchSession();
   try {
     if (playing && !sessionLoaded) {
       const request = new messages.LoadRequestData();
       const media = new messages.MediaInformation();
       media.contentId = longSilenceUrl;
       media.contentUrl = longSilenceUrl;
-      media.contentType = "audio/ogg";
+      media.contentType = "audio/mpeg";
       media.streamType = messages.StreamType.BUFFERED;
       const metadata = new messages.MusicTrackMediaMetadata();
       metadata.title = providedPlayerName || "Sendspin";
