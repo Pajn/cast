@@ -286,7 +286,15 @@ function watchSession(): void {
     }
   };
   playerManager.addEventListener(events.EventType.MEDIA_FINISHED, reload);
-  playerManager.addEventListener(events.EventType.ERROR, reload);
+  playerManager.addEventListener(events.EventType.ERROR, (event: any) => {
+    castContext?.sendCustomMessage(CAST_NAMESPACE, undefined, {
+      type: "session",
+      error: event?.detailedErrorCode ?? null,
+      reason: event?.reason ?? null,
+      cause: String(event?.error?.message ?? event?.error ?? ""),
+    });
+    reload();
+  });
 }
 
 // The media session the device sees: the long silent track, loaded once, then played and paused
