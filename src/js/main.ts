@@ -215,17 +215,33 @@ function setupGlobalErrorForwarding() {
 
 let player: SendspinPlayer | undefined;
 
-// What the player plays through: a media element, rather than Web Audio straight to the output,
-// so that the device sees media playing. Some Cast speakers, such as WiiM's, silence and then
-// stop an app whose audio comes from Web Audio alone.
+const silenceUrl = new URL("../assets/silence.wav", import.meta.url).href;
+
+// A silent clip looped in a media element while the player plays, which the receiver's player
+// manager holds, so that the device sees media playing. Some Cast speakers, such as WiiM's,
+// silence and then stop an app whose audio comes from Web Audio alone. The music itself still
+// plays through Web Audio, which a media element fed from it does not on those speakers.
 let mediaElement: HTMLAudioElement | null = null;
-function audioOutput(): HTMLAudioElement {
+function presence(): HTMLAudioElement {
   if (!mediaElement) {
     mediaElement = document.createElement("audio");
     mediaElement.style.display = "none";
+    mediaElement.src = silenceUrl;
+    mediaElement.loop = true;
     document.body.appendChild(mediaElement);
   }
   return mediaElement;
+}
+
+function showPlaying(playing: boolean): void {
+  const element = presence();
+  if (playing && element.paused) {
+    element.play().catch((error) => {
+      console.warn("Sendspin: Could not play the silent clip", error);
+    });
+  } else if (!playing && !element.paused) {
+    element.pause();
+  }
 }
 
 // Get hardware volume from Cast system (0-100 scale)
@@ -517,7 +533,6 @@ async function connectToServer(baseUrl: string): Promise<boolean> {
       clientName,
       correctionMode: "sync", // Explicit sync mode for multi-device playback
       storage: memoryStorage, // Cast doesn't support localStorage
-      audioElement: audioOutput(),
       syncDelay: providedSyncDelay,
       bufferCapacity: 1024 * 1024 * 2, // 2MB (GC4A memory constraint)
       // Use codecs from sender config, default to PCM for maximum compatibility.
@@ -583,6 +598,7 @@ async function connectToServer(baseUrl: string): Promise<boolean> {
         if (generation !== connectGeneration) {
           return;
         }
+        showPlaying(state.isPlaying);
         currentPlayerState = {
           isPlaying: state.isPlaying,
         };
@@ -884,7 +900,7 @@ function tryInitCafReceiver(): boolean {
 
   // The receiver's own player plays the media element, so the device counts it as media.
   try {
-    (context as any).getPlayerManager?.()?.setMediaElement?.(audioOutput());
+    (context as any).getPlayerManager?.()?.setMediaElement?.(presence());
   } catch (error) {
     console.warn(
       "Sendspin: Could not give the player manager the media element",
