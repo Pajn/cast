@@ -336,7 +336,13 @@ function showSession(playing: boolean): void {
 
 function showPlaying(playing: boolean): void {
   if (presenceMode === "session") {
-    showSession(playing);
+    // Kept playing once the player has played, through pauses, seeks and the gaps between
+    // streams: a WiiM mutes its amplifier as soon as the session stops, and takes the next
+    // audio, such as a calibration's first chirp, to wake. The sender stops the receiver once
+    // it has been idle for a while.
+    if (playing) {
+      showSession(true);
+    }
     return;
   }
   if (presenceMode !== "silent" && presenceMode !== "silent-free") {
