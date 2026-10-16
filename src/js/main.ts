@@ -226,7 +226,8 @@ const longSilenceUrl = new URL("../assets/silence-long.mp3", import.meta.url)
 // - "silent-free": the silent clip, without the player manager.
 // - "element": the music itself through a media element the player manager holds.
 // - "session": a silent track loaded into the player manager as a media session, which the
-//   device sees as playing, while the music plays through Web Audio.
+//   device sees as playing, while the music plays through Web Audio. The default: a WiiM
+//   plays only while it sees a media session play.
 type Presence = "none" | "silent" | "silent-free" | "element" | "session";
 const PRESENCES: readonly Presence[] = [
   "none",
@@ -235,7 +236,7 @@ const PRESENCES: readonly Presence[] = [
   "element",
   "session",
 ];
-let presenceMode: Presence = "none";
+let presenceMode: Presence = "session";
 let playerManager: any = null;
 
 let mediaElement: HTMLAudioElement | null = null;
@@ -1015,6 +1016,7 @@ function tryInitCafReceiver(): boolean {
   receiverStarted = true;
 
   playerManager = (context as any).getPlayerManager?.() ?? null;
+  setPresence(presenceMode);
 
   castContext = {
     getSystemVolume: () => (context as any).getSystemVolume?.() ?? null,
