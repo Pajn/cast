@@ -216,6 +216,8 @@ function setupGlobalErrorForwarding() {
 let player: SendspinPlayer | undefined;
 
 const silenceUrl = new URL("../assets/silence.wav", import.meta.url).href;
+const longSilenceUrl = new URL("../assets/silence-long.ogg", import.meta.url)
+  .href;
 
 // How the receiver shows the device it plays, which a sender's config may choose, for speakers
 // that silence or stop an app whose audio comes from Web Audio alone, such as WiiM's:
@@ -223,12 +225,15 @@ const silenceUrl = new URL("../assets/silence.wav", import.meta.url).href;
 // - "silent": also a silent clip looped in a media element the player manager holds.
 // - "silent-free": the silent clip, without the player manager.
 // - "element": the music itself through a media element the player manager holds.
-type Presence = "none" | "silent" | "silent-free" | "element";
+// - "session": a silent track loaded into the player manager as a media session, which the
+//   device sees as playing, while the music plays through Web Audio.
+type Presence = "none" | "silent" | "silent-free" | "element" | "session";
 const PRESENCES: readonly Presence[] = [
   "none",
   "silent",
   "silent-free",
   "element",
+  "session",
 ];
 let presenceMode: Presence = "none";
 let playerManager: any = null;
@@ -264,7 +269,48 @@ function setPresence(mode: Presence): void {
   showPlaying(currentPlayerState.isPlaying);
 }
 
+let sessionLoaded = false;
+
+// The media session the device sees: the long silent track, loaded once, then played and paused
+// with the player.
+function showSession(playing: boolean): void {
+  const messages = window.cast?.framework?.messages as any;
+  if (!playerManager || !messages) {
+    return;
+  }
+  try {
+    if (playing && !sessionLoaded) {
+      const request = new messages.LoadRequestData();
+      const media = new messages.MediaInformation();
+      media.contentId = longSilenceUrl;
+      media.contentUrl = longSilenceUrl;
+      media.contentType = "audio/ogg";
+      media.streamType = messages.StreamType.BUFFERED;
+      const metadata = new messages.MusicTrackMediaMetadata();
+      metadata.title = providedPlayerName || "Sendspin";
+      media.metadata = metadata;
+      request.media = media;
+      request.autoplay = true;
+      sessionLoaded = true;
+      Promise.resolve(playerManager.load(request)).catch((error: unknown) => {
+        sessionLoaded = false;
+        console.warn("Sendspin: Could not load the media session", error);
+      });
+    } else if (playing) {
+      playerManager.play();
+    } else if (sessionLoaded) {
+      playerManager.pause();
+    }
+  } catch (error) {
+    console.warn("Sendspin: Could not update the media session", error);
+  }
+}
+
 function showPlaying(playing: boolean): void {
+  if (presenceMode === "session") {
+    showSession(playing);
+    return;
+  }
   if (presenceMode !== "silent" && presenceMode !== "silent-free") {
     return;
   }
